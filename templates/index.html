@@ -580,6 +580,7 @@
       hideTyping();
       showToast('Error: ' + err.message, true);
       appendMessage('bot', 'Error: ' + err.message);
+    } finally {
       input.disabled = false;
       document.getElementById('sendBtn').disabled = false;
       isWaiting = false;
