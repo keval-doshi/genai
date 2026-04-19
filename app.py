@@ -1,13 +1,11 @@
 from flask import Flask, request, jsonify, render_template, session
-from google import genai
-from google.genai import types
 from dotenv import load_dotenv
 import os
 
 load_dotenv()
 
 app = Flask(__name__)
-app.secret_key = os.urandom(24)
+app.secret_key = os.getenv("SECRET_KEY", "myapp-fixed-secret-key-2024")
 
 # ============================================================
 #   EASY CUSTOMIZATION — Change these for your specific exam
@@ -34,12 +32,13 @@ MAX_HISTORY = 10
 
 # ============================================================
 
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-
-if not GEMINI_API_KEY:
-    raise ValueError("❌ GEMINI_API_KEY not found in .env file!")
-
-client = genai.Client(api_key=GEMINI_API_KEY)  # explicit key, no ambiguity
+def get_gemini_client():
+    """Create client lazily so missing key gives clean error instead of crashing."""
+    from google import genai
+    api_key = os.getenv("GEMINI_API_KEY")
+    if not api_key:
+        return None
+    return genai.Client(api_key=api_key)
 
 
 def get_session_history():
@@ -66,8 +65,16 @@ def chat():
     if not user_message:
         return jsonify({"error": "Empty message"}), 400
 
+    client = get_gemini_client()
+    if not client:
+        return jsonify({
+            "error": "api_error",
+            "message": "❌ GEMINI_API_KEY is not set. Please add it in Vercel → Settings → Environment Variables."
+        }), 500
+
     history = get_session_history()
 
+    from google.genai import types
     gemini_history = []
     for msg in history:
         role = "user" if msg["role"] == "user" else "model"
@@ -80,7 +87,7 @@ def chat():
 
     try:
         chat_session = client.chats.create(
-            model="gemini-2.5-flash",   # most stable free-tier model
+            model="gemini-2.5-flash",
             config=types.GenerateContentConfig(
                 system_instruction=SYSTEM_PROMPT
             ),
@@ -91,18 +98,17 @@ def chat():
         bot_reply = response.text
 
     except Exception as e:
-        print(f"\n🔴 ACTUAL ERROR: {e}\n")   # prints full error in terminal
+        print(f"🔴 ERROR: {e}")
         error_str = str(e).lower()
         if "429" in error_str or "quota" in error_str or "rate" in error_str or "resource_exhausted" in error_str:
             return jsonify({
                 "error": "quota_exceeded",
                 "message": "⚠️ Your free quota has been finished. Please wait a minute and try again."
             }), 429
-        else:
-            return jsonify({
-                "error": "api_error",
-                "message": f"Error: {str(e)}"
-            }), 500
+        return jsonify({
+            "error": "api_error",
+            "message": f"Error: {str(e)}"
+        }), 500
 
     history.append({"role": "user",      "content": user_message})
     history.append({"role": "assistant", "content": bot_reply})
