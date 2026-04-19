@@ -79,7 +79,7 @@ def chat():
             }), 500
 
         # ── Import SDK ──
-        from google import genai
+        import google.genai as genai
         from google.genai import types
 
         client = genai.Client(api_key=api_key)
